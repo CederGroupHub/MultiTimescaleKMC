@@ -31,7 +31,6 @@ class Multi_Time_Scale_KMC(Common_Class):
         
     """
     
-    
     def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, RT_CMC_results_file:str = "Delithiated_RT_DRX.pickle"):    #, disorder_fraction
         
         super().__init__(processor_file)
@@ -42,6 +41,8 @@ class Multi_Time_Scale_KMC(Common_Class):
         self.Species_Lists["O2"]=self.indices['O2']
         self.Species_Lists['Li_Vac'] = self.Species_Lists['Vac'].copy()+self.Species_Lists['Li'].copy()
         self.n_atoms = np.sum([len(self.Species_Lists[species]) for species in self.Species_Lists if (species!='Li_Vac') and (species!='Vac')])
+
+        self.Tet_Oct_Updater()
         
         self.spec_type = [self.Li, self.Vac, self.Mn3, self.Mn4, self.Ti4, self.Mn2, self.O2]
 
@@ -57,12 +58,55 @@ class Multi_Time_Scale_KMC(Common_Class):
         self.traj_steps = traj_steps
         #self.disorder_fraction = disorder_fraction
 
-        self.All_Hops = {}
+        #self.Redox_Neighbors = Redox_Center_Calculator()
         
         self.Conf = defaultdict(dict)           
         self.evolution_filename = f"Evolution_{self.T_KMC}K.pickle"
         self.Time = 0 
         self.step_file_name = "Step_number.txt"
+
+        self.All_Hops = {
+            'counter':-1,
+            'Hops':defaultdict(dict),
+            'Activation_Barriers':[],
+            'Energy_Changes':[]
+        }       
+
+        self.Hop_Mechanisms = {
+            "Tri-Vac":{},
+            "Di-Vac":{},
+            "Mono-Vac":{},
+        }
+        
+        BarrierParams = namedtuple("BarrierParams", ["kra", "end_state", "encoding"])
+        
+        self.barrier_map = {
+            "Tri-Vac": {
+                "Mn3_oct": BarrierParams(0.67, self.Mn3, 1),
+                "Mn3_tet": BarrierParams(0.67, self.Mn3, 2),
+                "Mn2_oct": BarrierParams(0.3, self.Mn2, 3),
+                "Mn2_tet": BarrierParams(0.3, self.Mn2, 4),  
+                "Mn4": BarrierParams(1.5, self.Mn4, 5),
+                "Ti4": BarrierParams(0.87, self.Ti4, 6),
+            },
+            "Di-Vac": {
+                "Mn3_oct": BarrierParams(0.75, self.Mn3, 7),
+                "Mn3_tet": BarrierParams(0.75, self.Mn3, 8),
+                "Mn2_oct": BarrierParams(0.3, self.Mn2, 9),
+                "Mn2_tet": BarrierParams(0.3, self.Mn2, 10),
+            },
+            "Mono-Vac": {
+                "Mn2_oct": BarrierParams(0.45, self.Mn2, 11),
+                "Mn2_tet": BarrierParams(0.45, self.Mn2, 12),
+            },
+        }
+
+        self.hop_types = {
+            "mn3_mn3": [1, 2, 7, 8],
+            "mn2_mn2": [3, 4, 9, 10, 11, 12],
+            "mn4_mn4": [5],
+            "ti4_ti4": [6]
+        }
     
     def run_KMC(self):
         
@@ -192,32 +236,43 @@ class Multi_Time_Scale_KMC(Common_Class):
             encoding (int): code for the type of hop occuring
         """
         
-        mn3_mn3 = [1,2,3,4]
-        mn2_mn2 = [5,6,7,8,9,10]
-
         tm, vac = the_hop[encoding]
 
-        if encoding in mn3_mn3:                              ### Mn3+ ----> Mn3+
+        if encoding in self.hop_types["mn3_mn3"]:                              ### Mn3+ ----> Mn3+
 
             idx_Mn3 = self.Species_Lists['Mn3'].index(tm)
             self.Species_Lists['Mn3'][idx_Mn3] = vac
 
             post_hop_specie = self.Mn3
 
-        if encoding in mn2_mn2:                              ### Mn2+ ----> Mn2+
+            if encoding in [1,7]:
+                self.Species_Lists['Mn3_oct'].remove(tm)
+                self.Species_Lists['Mn3_tet'].append(vac)
+            elif encoding in [2,8]:
+                self.Species_Lists['Mn3_tet'].remove(tm)
+                self.Species_Lists['Mn3_oct'].append(vac)               
+
+        if encoding in self.hop_types["mn2_mn2"]:                              ### Mn2+ ----> Mn2+
 
             idx_Mn2 = self.Species_Lists['Mn2'].index(tm)
             self.Species_Lists['Mn2'][idx_Mn2] = vac
 
             post_hop_specie = self.Mn2
 
-        if encoding==11:
+            if encoding in [3, 9, 11]:
+                self.Species_Lists['Mn2_oct'].remove(tm)
+                self.Species_Lists['Mn2_tet'].append(vac)
+            elif encoding in [4, 10, 12]:
+                self.Species_Lists['Mn2_tet'].remove(tm)
+                self.Species_Lists['Mn2_oct'].append(vac)               
+
+        if encoding in self.hop_types["mn4_mn4"]:
             idx_Mn = self.Species_Lists['Mn4'].index(tm)
             self.Species_Lists['Mn4'][idx_Mn] = vac
 
             post_hop_specie = self.Mn4
 
-        if encoding==12:
+        if encoding in self.hop_types["ti4_ti4"]:
             idx_Ti = self.Species_Lists['Ti4'].index(tm)
             self.Species_Lists['Ti4'][idx_Ti] = vac
 
@@ -250,192 +305,120 @@ class Multi_Time_Scale_KMC(Common_Class):
         barrier = (change/2)+ kra
         self.All_Hops['Activation_Barriers'].append(barrier)
 
+    def Redox_Center_Calculator(self, Redox_cutoff_dist=3):
+    
+        Redox_Neighbors = defaultdict(list)
+        all_sites = self.indices['tet'] + self.indices['oct']
+    
+        for site1 in all_sites:
+            for site2 in all_sites:
+                if (site1!=site2) and (self.processor.structure[site1].distance(self.processor.structure[site2]) <= Redox_cutoff_dist):
+                    Redox_Neighbors[site1].append(site2)
+    
+        return Redox_Neighbors
+    
     def All_Possible_Hops(self):
         
         """
         Method to list all possible Transition metal hops.
         """
         
-        e_kra_Mn2_MonoVac = 0.45          #Use for Tet-to-Oct only?
-        e_kra_Mn2_DiVac = 0.3
-        e_kra_Mn2_TriVac = 0.3
-
-        e_kra_Mn3_DiVac = 0.75            #Use for Tet-to-Oct only? No
-        e_kra_Mn3_TriVac = 0.67
-
-        e_kra_Ti4_TriVac = 0.87
-
-        e_kra_Mn4_TriVac = 1.5
-
-        mn_vac_neighbors = defaultdict(dict)
-        ti_vac_neighbors = defaultdict(list)
-        mn4_vac_neighbors = defaultdict(list)
-        
         self.All_Hops = {
             'counter':-1,
             'Hops':defaultdict(dict),
             'Activation_Barriers':[],
             'Energy_Changes':[]
+        }       
+
+        self.Hop_Mechanisms = {
+            "Tri-Vac":{},
+            "Di-Vac":{},
+            "Mono-Vac":{},
         }
-
-        Mn3_tet = [x for x in self.Species_Lists['Mn3'] if x in self.indices['tet']]
-        Mn3_oct = [x for x in self.Species_Lists['Mn3'] if x in self.indices['oct']]
-
-        Mn2_tet = [x for x in self.Species_Lists['Mn2'] if x in self.indices['tet']]         #np.intersect1d(Mn2_l, tet_oct_ind['tet'])
-        Mn2_oct = [x for x in self.Species_Lists['Mn2'] if x in self.indices['oct']]         #np.intersect1d(Mn2_l, tet_oct_ind['oct'])
-
-        Mobile_Mn_tet = Mn2_tet+Mn3_tet
-        Mobile_Mn_oct = Mn2_oct+Mn3_oct
+        
+        Mobile_Mn_tet = self.Species_Lists["Mn2_tet"]+self.Species_Lists["Mn3_tet"]
+        Mobile_Mn_oct = self.Species_Lists["Mn2_oct"]+self.Species_Lists["Mn3_oct"]
         Mobile_Mn = self.Species_Lists['Mn2']+self.Species_Lists['Mn3']
 
         tet_vac = [x for x in self.Species_Lists['Vac'] if x in self.indices['tet']]
-
-        tet_in_3_vac = []                                               #Tri-vacancy mechanism when tetrahedral site is vacant
-        tet_in_2_vac = []
-        tet_in_1_vac = []
-
-        for vac in tet_vac:                    #Differentiating vacant tetraherdrals for hopping mechanism
-            v_int = len([x for x in self.nns[vac] if x in self.Species_Lists['Vac']])
-            if (v_int==3):
-                m_int = len([x for x in self.nns[vac] if x in Mobile_Mn_oct])
-                if (m_int==1):    #Trivac
-                    tet_in_3_vac.append(vac) 
-            elif (v_int==2):
-                m_int = len([x for x in self.nns[vac] if x in Mobile_Mn_oct])
-                li_int = len([x for x in self.nns[vac] if x in self.Species_Lists['Li']])
-                if (m_int==1) and (li_int==1):    #Di-vac
-                    tet_in_2_vac.append(vac)         
-            elif (v_int==1):
-                m_int = len([x for x in self.nns[vac] if x in Mobile_Mn_oct])
-                li_int = len([x for x in self.nns[vac] if x in self.Species_Lists['Li']])
-                if (m_int==1) and (li_int==2):    #Mono-vac mechanism
-                    tet_in_1_vac.append(vac) 
-
-        for mn in Mobile_Mn_oct:                  #finding Vacancies Mobile Mn neighborhood
-            mn_vac_neighbors[mn]["Tri-Vac"] =  [x for x in self.nns[mn] if x in tet_in_3_vac]              #np.intersect1d(nns[mn], tet_in_3_vac).astype(int)
-            mn_vac_neighbors[mn]["Di-Vac"] =  [x for x in self.nns[mn] if x in tet_in_2_vac]
-            mn_vac_neighbors[mn]["Mono-Vac"] =  [x for x in self.nns[mn] if x in tet_in_1_vac]
-
-        tet_out_3_Mn = [] #Tri-vacancy mechanism
-
-        Mn3_tet_TriVac = []
-        Mn2_tet_TriVac = []
-
-        tet_out_2_Mn = [] #Di-vacancy mechanism
-
-        Mn3_tet_DiVac = []
-        Mn2_tet_DiVac = []
-
-        tet_out_1_Mn = [] #Mono-vacancy mechanism
-
-        Mn2_tet_MonoVac = []
-
-        for mn in Mobile_Mn_tet:               #Differentiating Mn tetraherdrals for hopping mechanism
-            v_int = len([x for x in self.nns[mn] if x in self.Species_Lists['Vac']])
-            if (v_int==4):                                   #Trivac
-                tet_out_3_Mn.append(mn)
-                if (mn in Mn3_tet):
-                    Mn3_tet_TriVac.append(mn)
-                if (mn in Mn2_tet):
-                    Mn2_tet_TriVac.append(mn)
-            elif (v_int==3):                                   #Divac
-                li_int = len([x for x in self.nns[mn] if x in self.Species_Lists['Li']])
-                if li_int==1:
-                    tet_out_2_Mn.append(mn)
-                    if (mn in Mn3_tet):
-                        Mn3_tet_DiVac.append(mn)
-                    if (mn in Mn2_tet):
-                        Mn2_tet_DiVac.append(mn)
-            elif (v_int==2):                                   #Monovac
-                li_int = len([x for x in self.nns[mn] if x in self.Species_Lists['Li']])
-                if li_int==2:
-                    tet_out_1_Mn.append(mn)
-                    if (mn in Mn2_tet):
-                        Mn2_tet_MonoVac.append(mn)
-
-        for mn in tet_out_3_Mn+tet_out_2_Mn+tet_out_1_Mn:
-            mn_vac_neighbors[mn] = [x for x in self.nns[mn] if x in self.Species_Lists['Vac']]                   #np.intersect1d(nns[mn], Vac_l).astype(int)
-
-        for mn in Mn3_oct:                ####(Reaction Encoding: 1) Mn3+ (Oct) --[Tri-Vac]--> Vac (as Mn3+)
-            for vac in mn_vac_neighbors[mn]["Tri-Vac"]:
-                self.Barrier_Calculator(e_kra_Mn3_TriVac, int(mn), vac, self.Mn3, ec=1)
-                
-        for mn in Mn3_tet_TriVac:         ####(Reaction Encoding: 2) Mn3+ (Tet) --[Tri-Vac]--> Vac (as Mn3+)
-            for vac in mn_vac_neighbors[mn]:
-                self.Barrier_Calculator(e_kra_Mn3_TriVac, int(mn), vac, self.Mn3, ec=2)
-                
-        for mn in Mn3_oct:                ####(Reaction Encoding: 3) Mn3+ (Oct) --[Di-Vac]--> Vac (as Mn3+)
-            for vac in mn_vac_neighbors[mn]["Di-Vac"]:
-                self.Barrier_Calculator(e_kra_Mn3_DiVac, int(mn), vac, self.Mn3, ec=3)
-
-        for mn in Mn3_tet_DiVac:         ####(Reaction Encoding: 4) Mn3+ (Tet) --[Di-Vac]--> Vac (as Mn3+)
-            for vac in mn_vac_neighbors[mn]:
-                self.Barrier_Calculator(e_kra_Mn3_DiVac, int(mn), vac, self.Mn3, ec=4)
-
-        for mn in Mn2_oct:              ####(Reaction Encoding: 5) Mn2+ (Oct) ----[Tri-Vac]--> Vac (as Mn2+)
-            for vac in mn_vac_neighbors[mn]["Tri-Vac"]:
-                self.Barrier_Calculator(e_kra_Mn2_TriVac, int(mn), vac, self.Mn2, ec=5)
-
-        for mn in Mn2_tet_TriVac:       ####(Reaction Encoding: 6) Mn2+ (Tet) ----[Tri-Vac]--> Vac (as Mn2+)
-            for vac in mn_vac_neighbors[mn]:
-                self.Barrier_Calculator(e_kra_Mn2_TriVac, int(mn), vac, self.Mn2, ec=6)
-
-        for mn in Mn2_oct:              ####(Reaction Encoding: 7) Mn2+ (Oct) ----[Di-Vac]--> Vac (as Mn2+)
-            for vac in mn_vac_neighbors[mn]["Di-Vac"]:
-                self.Barrier_Calculator(e_kra_Mn2_DiVac, int(mn), vac, self.Mn2, ec=7)
-
-        for mn in Mn2_tet_DiVac:       ####(Reaction Encoding: 8) Mn2+ (Tet) ----[Di-Vac]--> Vac (as Mn2+)
-            for vac in mn_vac_neighbors[mn]:
-                self.Barrier_Calculator(e_kra_Mn2_DiVac, int(mn), vac, self.Mn2, ec=8)
-
-        for mn in Mn2_oct:              ####(Reaction Encoding: 9) Mn2+ (Oct) ----[Mono-Vac]--> Vac (as Mn2+)
-            for vac in mn_vac_neighbors[mn]["Mono-Vac"]:
-                self.Barrier_Calculator(e_kra_Mn2_MonoVac, int(mn), vac, self.Mn2, ec=9)
-
-        for mn in Mn2_tet_MonoVac:       ####(Reaction Encoding: 10) Mn2+ (Tet) ----[Mono-Vac]--> Vac (as Mn2+)
-            for vac in mn_vac_neighbors[mn]:
-                self.Barrier_Calculator(e_kra_Mn2_MonoVac, int(mn), vac, self.Mn2, ec=10)
-
         oct_vac = [x for x in self.Species_Lists['Vac'] if x in self.indices['oct']]
-        z_TM_oct_vacs = []
         Pristine_oct_vacs = []
 
         for o in oct_vac:
-            oct_vac_TM_nns = len([x for x in self.nns[o] if x in Mobile_Mn])    # Not a single TM cation  - Easier Bar to cross
-            oct_pristine_vacs = len([x for x in self.nns[o] if x in self.Species_Lists['Vac']])     # Not a single FS cation
-            if oct_vac_TM_nns==0:
-                z_TM_oct_vacs.append(o)
+            oct_pristine_vacs = len([x for x in self.nns[o] if x in self.Species_Lists['Vac']])
             if oct_pristine_vacs==8:
                 Pristine_oct_vacs.append(o)
-
+        
         for vac in tet_vac:                    #Differentiating vacant tetraherdrals for hopping mechanism
-            m_int = [x for x in self.nns[vac] if x in self.Species_Lists['Mn4']]
-            if (len(m_int)==1):           
-                v_octs = [x for x in self.nns[vac] if x in z_TM_oct_vacs]
+            
+            v_int = len([x for x in self.nns[vac] if x in self.Species_Lists['Vac']])
+            if (v_int in [1,2,3]):
+                FS_TMs = [x for x in self.nns[vac] if x in Mobile_Mn_oct]
+                if (v_int==3) and (len(FS_TMs)==1):    #Trivac
+                    self.Mechanism_Update(FS_TMs[0], "Tri-Vac")
+                    self.Hop_Mechanisms["Tri-Vac"][FS_TMs[0]].append(vac) 
+                elif (v_int==2):
+                    li_int = len([x for x in self.nns[vac] if x in self.Species_Lists['Li']])
+                    if (len(FS_TMs)==1) and (li_int==1):    #Di-vac
+                        self.Mechanism_Update(FS_TMs[0], "Di-Vac")
+                        self.Hop_Mechanisms["Di-Vac"][FS_TMs[0]].append(vac)         
+                elif (v_int==1):
+                    li_int = len([x for x in self.nns[vac] if x in self.Species_Lists['Li']])
+                    if (len(FS_TMs)==1) and (li_int==2):    #Mono-vac mechanism
+                        self.Mechanism_Update(FS_TMs[0], "Mono-Vac")
+                        self.Hop_Mechanisms["Mono-Vac"][FS_TMs[0]].append(vac) 
+
+            FS_Mn4s = [x for x in self.nns[vac] if x in self.Species_Lists['Mn4']]
+            if (len(FS_Mn4s)==1):           
+                v_octs = [x for x in self.nns[vac] if x in Pristine_oct_vacs]
                 if (len(v_octs)==3):
+                    self.Mechanism_Update(FS_Mn4s[0], "Tri-Vac")
                     for v_oct in v_octs:                
-                        mn4_vac_neighbors[m_int[0]].append(v_oct)                                
-
-        for mn in mn4_vac_neighbors: 
-            for vac in mn4_vac_neighbors[mn]:
-                self.Barrier_Calculator(e_kra_Mn4_TriVac, int(mn), int(vac), self.Mn4, ec=11)
-
-        Pristine_Hops_Counter = 0
-        Normal_Hops_Counter = 0
-
-        for vac in tet_vac:                    #Differentiating vacant tetraherdrals for hopping mechanism
-            t_int = [x for x in self.nns[vac] if x in self.Species_Lists['Ti4']]
-            if (len(t_int)==1):           
-                v_octs = [x for x in self.nns[vac] if x in z_TM_oct_vacs]
+                        self.Hop_Mechanisms["Tri-Vac"][FS_Mn4s[0]].append(v_oct) 
+                        
+            FS_Tis = [x for x in self.nns[vac] if x in self.Species_Lists['Ti4']]
+            if (len(FS_Tis)==1):           
+                v_octs = [x for x in self.nns[vac] if x in Pristine_oct_vacs]
                 if (len(v_octs)==3):
+                    self.Mechanism_Update(FS_Tis[0], "Tri-Vac")
                     for v_oct in v_octs:                
-                        ti_vac_neighbors[t_int[0]].append(v_oct)                    
-                    Normal_Hops_Counter+=len(v_octs)            
+                        self.Hop_Mechanisms["Tri-Vac"][FS_Tis[0]].append(v_oct)
+        
+        for mn in Mobile_Mn_tet:               #Differentiating Mn tetraherdrals for hopping mechanism
+            FS_Vacs = [x for x in self.nns[mn] if x in self.Species_Lists['Vac']]
+            if (len(FS_Vacs)==4):                                   #Trivac
+                self.Hop_Mechanisms["Tri-Vac"][mn] = FS_Vacs
+            elif (len(FS_Vacs)==3):                                   #Divac
+                li_int = len([x for x in self.nns[mn] if x in self.Species_Lists['Li']])
+                if li_int==1:
+                    self.Hop_Mechanisms["Di-Vac"][mn] = FS_Vacs
+            elif (len(FS_Vacs)==2):                                   #Monovac
+                li_int = len([x for x in self.nns[mn] if x in self.Species_Lists['Li']])
+                if li_int==2:
+                    self.Hop_Mechanisms["Mono-Vac"][mn] = FS_Vacs 
 
-        for ti in self.Species_Lists['Ti4']: 
-            for vac in ti_vac_neighbors[ti]:
-                self.Barrier_Calculator(e_kra_Ti4_TriVac, int(ti), int(vac), self.Ti4, ec=12)
-    
+        for mechanism in self.Hop_Mechanisms:
+            for mn in self.Hop_Mechanisms[mechanism]:
+                for vac in self.Hop_Mechanisms[mechanism][mn]:
+                    for cation_description, hop_info in self.barrier_map[mechanism].items():
+                        if mn in self.Species_Lists[cation_description]:  # Dynamically fetch the correct set (Mn3_oct, etc.) #globals()[mn_type]
+                            self.Barrier_Calculator(hop_info.kra, int(mn), vac, hop_info.end_state, hop_info.encoding)
+                            break  # Exit the loop once a match is found
+
+    def Mechanism_Update(self, tm, mechanism):
+        
+        if tm not in self.Hop_Mechanisms[mechanism]:
+            self.Hop_Mechanisms[mechanism][tm]=[]
+
     def Species_Indices(self):
-        spec_indices = [self.Species_Lists[species] for species in self.Species_Lists if species != 'Li_Vac']
+        
+        unwanted_lists = ['Li_Vac', "Mn3_tet", "Mn3_oct", "Mn2_tet", "Mn2_oct"]
+        spec_indices = [self.Species_Lists[species] for species in self.Species_Lists if species not in unwanted_lists]
         return spec_indices
+
+    def Tet_Oct_Updater(self):
+
+        self.Species_Lists["Mn3_tet"] = [x for x in self.Species_Lists['Mn3'] if x in self.indices['tet']]
+        self.Species_Lists["Mn3_oct"] = [x for x in self.Species_Lists['Mn3'] if x in self.indices['oct']]
+        self.Species_Lists["Mn2_tet"] = [x for x in self.Species_Lists['Mn2'] if x in self.indices['tet']]   
+        self.Species_Lists["Mn2_oct"] = [x for x in self.Species_Lists['Mn2'] if x in self.indices['oct']]

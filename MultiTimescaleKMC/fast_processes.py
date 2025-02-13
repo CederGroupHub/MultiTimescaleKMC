@@ -58,6 +58,8 @@ class Fast_Processes_MC():
         self_kmc.Species_Lists['Mn2'] = list(Fast_Configs['Mn2_configs'][idx])
         self_kmc.Species_Lists['Mn3'] = list(Fast_Configs['Mn3_configs'][idx])
         self_kmc.Species_Lists['Mn4'] = list(Fast_Configs['Mn4_configs'][idx])
+
+        self_kmc.Tet_Oct_Updater()
         
         self_kmc.occ = self_kmc.Occupancy_Resetter()
             
