@@ -4,6 +4,7 @@ import pickle
 import numpy as np
 from custom_io import Custom_IO
 from pymatgen.core import Species
+from collections import namedtuple
 from collections import defaultdict
 from fast_processes import Fast_Processes_MC
 from common_mc_initialization import Common_Class
@@ -31,7 +32,7 @@ class Multi_Time_Scale_KMC(Common_Class):
         
     """
     
-    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, RT_CMC_results_file:str = "Delithiated_RT_DRX.pickle"):    #, disorder_fraction
+    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, RT_CMC_results_file:str = "Delithiated_RT_DRX.pickle", KMC_Results_file = "Evolution.pickle"):    #, disorder_fraction
         
         super().__init__(processor_file)
         
@@ -61,7 +62,7 @@ class Multi_Time_Scale_KMC(Common_Class):
         #self.Redox_Neighbors = Redox_Center_Calculator()
         
         self.Conf = defaultdict(dict)           
-        self.evolution_filename = f"Evolution_{self.T_KMC}K.pickle"
+        self.evolution_filename = KMC_Results_file
         self.Time = 0 
         self.step_file_name = "Step_number.txt"
 
@@ -121,7 +122,7 @@ class Multi_Time_Scale_KMC(Common_Class):
         for s in range(self.traj_steps):    
             Fast_Processes.Select_Fast_Configuration(self, s)      #JUST TO PROVE THAT WE HAVE DONE OUR DUE DILLIGENCE
             self.Hop(s)
-            if (s!=0) and (s%2000==0):
+            if (s!=0) and (s%25000==0):
                 self.plot_energy_evolution()
         
     def Hop(self, s: int):
@@ -183,7 +184,7 @@ class Multi_Time_Scale_KMC(Common_Class):
             encoding (int): code for the type of hop occuring
         """
         
-        if s%20==0:
+        if s%250==0:
             
             print("Trajectory Step Number:  " + str(s) + "\n")
             

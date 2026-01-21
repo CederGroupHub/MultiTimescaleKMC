@@ -29,10 +29,10 @@ class Delithiated_RT_CMC(Common_Class):
         
     """
 
-    def __init__(self, comp_Li, processor_file: str, sampling_steps: int, RT_Configuration_filename: str = "Delithiated_RT_DRX.pickle"):
+    def __init__(self, comp_Li, processor_file: str, sampling_steps: int, HT_filename = "HT_DRX.pickle", RT_Configuration_filename: str = "Delithiated_RT_DRX.pickle", swap_all=False, temperature = 300):
         
         super().__init__(processor_file)
-        self.Species_Lists = Custom_IO.load_pickle(os.getcwd(), "HT_DRX.pickle")
+        self.Species_Lists = Custom_IO.load_pickle(HT_filename)
         self.Species_Lists.pop('Energy_All')
         
         self.comp_Li = comp_Li
@@ -46,14 +46,17 @@ class Delithiated_RT_CMC(Common_Class):
         self.occ = self.Occupancy_Resetter(spec_type = spec_type, spec_indices = spec_indices)
 
         self.sampling_steps = sampling_steps
-        self.T_sample = 300
+        self.T_sample = temperature
 
         self.energy = self.processor.compute_property(self.occ)[0]
         self.Energy_All = np.array([self.energy])
+
+        if swap_all:
+            self.swaps = [0,1,2,3,4]
+        else:
+            self.swaps = [0,1]
         
-        self.swaps = [0,1]
-        
-        self.Conf = defaultdict(dict)                                          #Configurational information at each step
+        self.Conf = defaultdict(dict)            #Configurational information at each step
         self.RT_Configuration_filename = RT_Configuration_filename
         self.n_atoms = np.sum([len(self.Species_Lists[species]) for species in self.Species_Lists if (species!='Li_Vac') and (species!='Vac')])
 
@@ -64,6 +67,8 @@ class Delithiated_RT_CMC(Common_Class):
         """        
         
         for i in range(self.sampling_steps):             #Metropolis algorithm for canonical swaps accross sublattices.
+            if i%10000==0:
+                print(f"step number {i}")
             self.Swap_MC()
             self.Energy_All = np.append(self.Energy_All,self.energy)
             if np.min(self.Energy_All) == self.energy:
@@ -108,9 +113,33 @@ class Delithiated_RT_CMC(Common_Class):
 
             a_specie = self.Mn3
             b_specie = self.Mn4
+        
+        elif r == 2:    
+            a = self.Species_Lists['Mn3']
+            b = [vac for vac in self.Species_Lists['Vac'] if vac not in self.indices['tet']]
+
+            a_specie = self.Mn3
+            b_specie = self.Vac
+
+        elif r == 3:    
+            a = self.Species_Lists['Mn4']
+            b = [vac for vac in self.Species_Lists['Vac'] if vac not in self.indices['tet']]
+
+            a_specie = self.Mn4
+            b_specie = self.Vac
+
+        elif r == 4:            
+            a = self.Species_Lists['Ti4']
+            b = [vac for vac in self.Species_Lists['Vac'] if vac not in self.indices['tet']]
+
+            a_specie = self.Ti4
+            b_specie = self.Vac
 
         a_Swap = sample(a,1)[0]
         b_Swap = sample(b,1)[0]
+
+        if r in [2, 3, 4]:
+            b = self.Species_Lists['Vac']
 
         energy_change = self.processor.compute_property_change(self.occ,[(a_Swap, self.site_encodings[a_Swap].index(b_specie)), (b_Swap, self.site_encodings[b_Swap].index(a_specie))])[0]
 
