@@ -1,3 +1,4 @@
+import os
 import random
 import numpy as np
 from custom_io import Custom_IO
@@ -7,6 +8,7 @@ import smol.cofe.space.domain as ForVac
 from local_structure_details import Local_Structure_Details
 
 class Common_Class():
+    _processor_cache = {}
     
     """
     This class initializes all important attributes inherited by the CMC and KMC classes by using the processor_file location (str).
@@ -43,13 +45,34 @@ class Common_Class():
         self.O2 = Species.from_str("O2-")
         
         self.kB = 8.617*10**-5
+
+        # ---- Cache the expensive part ----
+        key = os.path.abspath(processor_file)
+        cached = Common_Class._processor_cache.get(key)
         
-        self.processor = Custom_IO.load_processor(processor_file)
-        
-        self.n_sites = self.processor.num_sites
-        self.site_encodings = self.processor.allowed_species
-        self.indices = Local_Structure_Details.struct_indicies(self.processor)
-        self.nns = Local_Structure_Details.Nearest_Neighbor_Calculator(self.processor, self.indices)
+        if cached is None:
+            processor = Custom_IO.load_processor(key)
+
+            n_sites = processor.num_sites
+            site_encodings = processor.allowed_species
+            indices = Local_Structure_Details.struct_indicies(processor)
+            nns = Local_Structure_Details.Nearest_Neighbor_Calculator(processor, indices)
+
+            cached = {
+                "processor": processor,
+                "n_sites": n_sites,
+                "site_encodings": site_encodings,
+                "indices": indices,
+                "nns": nns,
+            }
+            Common_Class._processor_cache[key] = cached
+
+        # Attach cached shared objects to this instance (cheap)
+        self.processor = cached["processor"]
+        self.n_sites = cached["n_sites"]
+        self.site_encodings = cached["site_encodings"]
+        self.indices = cached["indices"]
+        self.nns = cached["nns"]
         
     def Occupancy_Resetter(self, spec_type = None, spec_indices = None):
 

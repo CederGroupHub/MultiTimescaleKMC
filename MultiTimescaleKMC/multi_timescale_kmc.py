@@ -32,13 +32,24 @@ class Multi_Time_Scale_KMC(Common_Class):
         
     """
     
-    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, RT_CMC_results_file:str = "Delithiated_RT_DRX.pickle", KMC_Results_file = "Evolution.pickle"):    #, disorder_fraction
+    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, input_configuration:str = "Delithiated_RT_DRX.pickle", KMC_Results_file = "Evolution.pickle"):    #, disorder_fraction
         
         super().__init__(processor_file)
-        
-        self.Species_Lists = Custom_IO.load_pickle(RT_CMC_results_file)         #You should have this file within the current directory
-        self.Species_Lists.pop('Energy_All')
-        self.Species_Lists["Mn2"]=[]
+
+        if isinstance(input_configuration, str):
+            self.Species_Lists = Custom_IO.load_pickle(input_configuration)        
+            self.Species_Lists.pop('Energy_All')
+            self.Species_Lists["Mn2"]=[]
+        else:             #Presuming the other type of input is verbose dictionary output of a KMC snapshot. Used to continue KMC trajectories.
+            keys_to_remove = set(['Av_Energy', 'Hop', 'Encoding', 'time'])
+            self.Species_Lists = {k: v for k, v in input_configuration.items() if k not in keys_to_remove} 
+            self.Species_Lists['Li'] = self.Species_Lists.pop('Li_l')                          # Needlessly complicated because if inconsistent input-output
+            self.Species_Lists['Vac'] = [site for site in self.indices['tet']+self.indices['oct'] if site not in {idx for site_indices in self.Species_Lists.values() for idx in site_indices}]
+            self.Species_Lists['Mn3'] = self.Species_Lists.pop('Mn3_l')                          # Needlessly complicated because if inconsistent input-output
+            self.Species_Lists['Mn4'] = self.Species_Lists.pop('Mn4_l')                          # Needlessly complicated because if inconsistent input-output
+            self.Species_Lists['Ti4'] = self.Species_Lists.pop('Ti_l')                          # Needlessly complicated because if inconsistent input-output
+            self.Species_Lists['Mn2'] = self.Species_Lists.pop('Mn2_l')                          # Needlessly complicated because if inconsistent input-output
+
         self.Species_Lists["O2"]=self.indices['O2']
         self.Species_Lists['Li_Vac'] = self.Species_Lists['Vac'].copy()+self.Species_Lists['Li'].copy()
         self.n_atoms = np.sum([len(self.Species_Lists[species]) for species in self.Species_Lists if (species!='Li_Vac') and (species!='Vac')])
