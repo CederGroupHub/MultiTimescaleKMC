@@ -32,13 +32,13 @@ class DRX_CMC(Common_Class):
     """
     
     
-    def __init__(self, comp_Li: float, comp_Ti: float, processor_file: str, sampling_steps: int, T_sample: int):
+    def __init__(self, comp_Li: float, comp_Ti: float, processor_file: str, sampling_steps: int, T_sample: int, Output_type = "Minima", Output_filename = "HT_DRX.pickle"):
         super().__init__(processor_file)
         
         self.sampling_steps = sampling_steps
         self.T_sample = T_sample
         
-        self.HT_Configuration_filename = "HT_DRX.pickle"
+        self.HT_Configuration_filename = Output_filename
         
         self.comp_Li = comp_Li
         self.comp_Ti = comp_Ti
@@ -64,6 +64,7 @@ class DRX_CMC(Common_Class):
         self.swaps = [0,1,2]
         
         self.Conf = defaultdict(dict)                                          #Configurational information at each step
+        self.output_type = Output_type
         
     def HT_CMC(self):
 
@@ -84,16 +85,25 @@ class DRX_CMC(Common_Class):
         """
         Method to write the equilibrated atomic configuration after the simulation has finished.
         """
-        
-        idx = np.argmin(np.abs(self.Energy_Unique - np.mean(self.Energy_Unique)))
+        if self.output_type=="Minima":
+            idx = np.argmin(np.abs(self.Energy_Unique - np.mean(self.Energy_Unique)))
+    
+            self.Conf = {
+                'Li':self.Li_Configs[idx],
+                'Mn3':self.Mn3_Configs[idx],
+                'Mn4':self.Mn4_Configs[idx],
+                'Ti4':self.Ti4_Configs[idx],
+                'Energy_All':self.Energy_All.copy()
+            }
 
-        self.Conf = {
-            'Li':self.Li_Configs[idx],
-            'Mn3':self.Mn3_Configs[idx],
-            'Mn4':self.Mn4_Configs[idx],
-            'Ti4':self.Ti4_Configs[idx],
-            'Energy_All':self.Energy_All.copy()
-        }
+        else:
+            self.Conf = {
+                'Li':self.Li_Configs,
+                'Mn3':self.Mn3_Configs,
+                'Mn4':self.Mn4_Configs,
+                'Ti4':self.Ti4_Configs,
+                'Energy_All':self.Energy_All.copy()
+            }     
         
         Custom_IO.write_pickle(self.Conf, self.HT_Configuration_filename)
         
