@@ -60,6 +60,7 @@ class DRX_CMC(Common_Class):
         self.Mn4_Configs = []
         self.Ti4_Configs = []
         self.Li_Configs = []
+        self.Cat_Configs = []
         
         self.swaps = [0,1,2]
         
@@ -112,12 +113,18 @@ class DRX_CMC(Common_Class):
         """
         Method to keep track of all unique equilibrated DRX configurations.
         """
-        
-        self.Mn3_Configs.append(self.Species_Lists['Mn3'].copy())
-        self.Mn4_Configs.append(self.Species_Lists['Mn4'].copy())
-        self.Ti4_Configs.append(self.Species_Lists['Ti4'].copy())
-        self.Li_Configs.append(self.Species_Lists['Li'].copy())
-        self.Energy_Unique = np.append(self.Energy_Unique,self.energy)
+
+        Cation_Configuration = sorted(self.Species_Lists['Li'])+sorted(self.Species_Lists['Mn3'])+sorted(self.Species_Lists['Mn4'])+sorted(self.Species_Lists['Ti4'])
+
+        if Cation_Configuration not in self.Cat_Configs:
+            self.Cat_Configs.append(Cation_Configuration.copy())
+
+            self.Li_Configs.append(self.Species_Lists['Li'].copy())
+            self.Mn3_Configs.append(self.Species_Lists['Mn3'].copy())
+            self.Mn4_Configs.append(self.Species_Lists['Mn4'].copy())
+            self.Ti4_Configs.append(self.Species_Lists['Ti4'].copy())
+            
+            self.Energy_Unique = np.append(self.Energy_Unique,self.energy)
         
     def Perturbation_Calculator(self):
 

@@ -76,6 +76,11 @@ class Initial_Structure_Makers():
         n_Mn3 = int( (mn3/2)*(n_oct_sites) )
         
         n_Mn4 = n_oct_sites - (n_Li+n_Ti+n_Mn3)
+        charge = 4*n_Mn4+3*n_Mn3+4*n_Ti+n_Li-2*len(self_DRX.indices['O2'])
+        
+        if (n_Mn4==1) and (charge>0):
+            n_Mn3+=n_Mn4
+            n_Mn4=0
 
         Tets = self_DRX.indices['tet'].copy()
         Octs = self_DRX.indices['oct'].copy()
