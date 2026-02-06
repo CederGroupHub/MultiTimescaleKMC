@@ -66,6 +66,7 @@ class DRX_CMC(Common_Class):
         
         self.Conf = defaultdict(dict)                                          #Configurational information at each step
         self.output_type = Output_type
+        self.equilibration_step_cutoff = 100000
         
     def HT_CMC(self):
 
@@ -75,7 +76,7 @@ class DRX_CMC(Common_Class):
 
         for i in range(self.sampling_steps):             #Metropolis algorithm for canonical swaps accross sublattices.
             self.Swap_MC()
-            if (i>100000) and (self.energy not in self.Energy_All):
+            if (i>self.equilibration_step_cutoff) and (self.energy not in self.Energy_All):
                 self.DRX_Configs_Update()
             self.Energy_All = np.append(self.Energy_All,self.energy)
         self.Write_Configuration()
@@ -94,7 +95,8 @@ class DRX_CMC(Common_Class):
                 'Mn3':self.Mn3_Configs[idx],
                 'Mn4':self.Mn4_Configs[idx],
                 'Ti4':self.Ti4_Configs[idx],
-                'Energy_All':self.Energy_All.copy()
+                'Energy_All':self.Energy_All.copy(),
+                'Equilibrated_Energies':self.Energy_Unique
             }
 
         else:
