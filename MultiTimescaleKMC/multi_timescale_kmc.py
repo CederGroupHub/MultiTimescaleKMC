@@ -32,7 +32,7 @@ class Multi_Time_Scale_KMC(Common_Class):
         
     """
     
-    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, input_configuration:str = "Delithiated_RT_DRX.pickle", KMC_Results_file = "Evolution.pickle"):    #, disorder_fraction
+    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, input_configuration:str = "Delithiated_RT_DRX.pickle", KMC_Results_file = "Evolution.pickle", mobile_Ti=False):    #, disorder_fraction
         
         super().__init__(processor_file)
 
@@ -40,7 +40,7 @@ class Multi_Time_Scale_KMC(Common_Class):
             self.Species_Lists = Custom_IO.load_pickle(input_configuration)        
             self.Species_Lists.pop('Energy_All')
             self.Species_Lists["Mn2"]=[]
-        else:             #Presuming the other type of input is verbose dictionary output of a KMC snapshot. Used to continue KMC trajectories.
+        else:             #Presuming the other type of input is the dictionary of a snapshot along a KMC trajectory
             keys_to_remove = set(['Av_Energy', 'Hop', 'Encoding', 'time'])
             self.Species_Lists = {k: v for k, v in input_configuration.items() if k not in keys_to_remove} 
             self.Species_Lists['Li'] = self.Species_Lists.pop('Li_l')                          # Needlessly complicated because if inconsistent input-output
@@ -119,6 +119,13 @@ class Multi_Time_Scale_KMC(Common_Class):
             "mn4_mn4": [5],
             "ti4_ti4": [6]
         }
+
+        self.mobile_Ti = mobile_Ti          
+        # In the low temperature regime (293K-473K) in which experiments are performed, number of Ti hops relative to Mn are negligibly small. 
+        # However, in simulations, a significant amount of transformation is only observed at higher temperatures (>1000 K). Ti is much more mobile in this regime.
+        # The self.mobile_Ti flag is a simple way of enforcing low temperature Ti/Mn kinetics at higher temperatures.
+        # Other alternatives might involve scaling the Ti barriers to higher values based on the temperature we are perfoming the simulations at.
+        # These options are are not explored here.
     
     def run_KMC(self):
         
@@ -131,8 +138,8 @@ class Multi_Time_Scale_KMC(Common_Class):
         
         Fast_Processes = Fast_Processes_MC()
         for s in range(self.traj_steps):    
-            Fast_Processes.Select_Fast_Configuration(self, s)      #JUST TO PROVE THAT WE HAVE DONE OUR DUE DILLIGENCE
-            self.Hop(s)
+            Fast_Processes.Select_Fast_Configuration(self, s)      # Fast processes like charge transfer and Li/Vac swaps.
+            self.Hop(s)                                            # TM hops
             if (s!=0) and (s%25000==0):
                 self.plot_energy_evolution()
         
@@ -146,8 +153,8 @@ class Multi_Time_Scale_KMC(Common_Class):
         Args:
             s (int): current KMC step number
         """
-        
-        self.All_Possible_Hops()       #CAN GNNS DO THIS FASTER?
+       
+        self.All_Possible_Hops()
         self.Time_Advancement()
         the_hop, encoding = self.Hop_Finder()                     #The TM Hop energy change was updated
         self.Write_Evolution_File(s, the_hop, encoding)                   #encoding is for keeping track of the mechanism
@@ -388,13 +395,14 @@ class Multi_Time_Scale_KMC(Common_Class):
                     for v_oct in v_octs:                
                         self.Hop_Mechanisms["Tri-Vac"][FS_Mn4s[0]].append(v_oct) 
                         
-            FS_Tis = [x for x in self.nns[vac] if x in self.Species_Lists['Ti4']]
-            if (len(FS_Tis)==1):           
-                v_octs = [x for x in self.nns[vac] if x in Pristine_oct_vacs]
-                if (len(v_octs)==3):
-                    self.Mechanism_Update(FS_Tis[0], "Tri-Vac")
-                    for v_oct in v_octs:                
-                        self.Hop_Mechanisms["Tri-Vac"][FS_Tis[0]].append(v_oct)
+            if self.mobile_Ti:
+                FS_Tis = [x for x in self.nns[vac] if x in self.Species_Lists['Ti4']]
+                if (len(FS_Tis)==1):           
+                    v_octs = [x for x in self.nns[vac] if x in Pristine_oct_vacs]
+                    if (len(v_octs)==3):
+                        self.Mechanism_Update(FS_Tis[0], "Tri-Vac")
+                        for v_oct in v_octs:                
+                            self.Hop_Mechanisms["Tri-Vac"][FS_Tis[0]].append(v_oct)
         
         for mn in Mobile_Mn_tet:               #Differentiating Mn tetraherdrals for hopping mechanism
             FS_Vacs = [x for x in self.nns[mn] if x in self.Species_Lists['Vac']]
@@ -410,7 +418,7 @@ class Multi_Time_Scale_KMC(Common_Class):
                     self.Hop_Mechanisms["Mono-Vac"][mn] = FS_Vacs 
 
         for mechanism in self.Hop_Mechanisms:
-            for mn in self.Hop_Mechanisms[mechanism]:
+            for mn in self.Hop_Mechanisms[mechanism]:                 
                 for vac in self.Hop_Mechanisms[mechanism][mn]:
                     for cation_description, hop_info in self.barrier_map[mechanism].items():
                         if mn in self.Species_Lists[cation_description]:  # Dynamically fetch the correct set (Mn3_oct, etc.) #globals()[mn_type]
