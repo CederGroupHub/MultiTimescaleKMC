@@ -32,7 +32,7 @@ class Multi_Time_Scale_KMC(Common_Class):
         
     """
     
-    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, input_configuration:str = "Delithiated_RT_DRX.pickle", KMC_Results_file = "Evolution.pickle", mobile_Ti=False):    #, disorder_fraction
+    def __init__(self, T_KMC: int, traj_steps: int, processor_file: str, input_configuration:str = "Delithiated_RT_DRX.pickle", KMC_Results_file = "Evolution.pickle", mobile_Ti=False, Ti_kra = 0.87):    #, disorder_fraction
         
         super().__init__(processor_file)
 
@@ -99,7 +99,7 @@ class Multi_Time_Scale_KMC(Common_Class):
                 "Mn2_oct": BarrierParams(0.3, self.Mn2, 3),
                 "Mn2_tet": BarrierParams(0.3, self.Mn2, 4),  
                 "Mn4": BarrierParams(1.5, self.Mn4, 5),
-                "Ti4": BarrierParams(0.87, self.Ti4, 6),
+                "Ti4": BarrierParams(Ti_kra, self.Ti4, 6), # Ti barriers can be varied to maintain the same relative Mn/Ti mobility at simulation and experimental temperatures.
             },
             "Di-Vac": {
                 "Mn3_oct": BarrierParams(0.75, self.Mn3, 7),
@@ -125,7 +125,7 @@ class Multi_Time_Scale_KMC(Common_Class):
         # However, in simulations, a significant amount of transformation is only observed at higher temperatures (>1000 K). Ti is much more mobile in this regime.
         # The self.mobile_Ti flag is a simple way of enforcing low temperature Ti/Mn kinetics at higher temperatures.
         # Other alternatives might involve scaling the Ti barriers to higher values based on the temperature we are perfoming the simulations at.
-        # These options are are not explored here.
+        # These can be done by varying Ti_kra and testing.
     
     def run_KMC(self):
         
