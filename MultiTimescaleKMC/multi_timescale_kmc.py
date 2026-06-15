@@ -43,12 +43,7 @@ class Multi_Time_Scale_KMC(Common_Class):
         else:             #Presuming the other type of input is the dictionary of a snapshot along a KMC trajectory
             keys_to_remove = set(['Av_Energy', 'Hop', 'Encoding', 'time'])
             self.Species_Lists = {k: v for k, v in input_configuration.items() if k not in keys_to_remove} 
-            self.Species_Lists['Li'] = self.Species_Lists.pop('Li_l')                          # Needlessly complicated because if inconsistent input-output
             self.Species_Lists['Vac'] = [site for site in self.indices['tet']+self.indices['oct'] if site not in {idx for site_indices in self.Species_Lists.values() for idx in site_indices}]
-            self.Species_Lists['Mn3'] = self.Species_Lists.pop('Mn3_l')                          # Needlessly complicated because if inconsistent input-output
-            self.Species_Lists['Mn4'] = self.Species_Lists.pop('Mn4_l')                          # Needlessly complicated because if inconsistent input-output
-            self.Species_Lists['Ti4'] = self.Species_Lists.pop('Ti_l')                          # Needlessly complicated because if inconsistent input-output
-            self.Species_Lists['Mn2'] = self.Species_Lists.pop('Mn2_l')                          # Needlessly complicated because if inconsistent input-output
 
         self.Species_Lists["O2"]=self.indices['O2']
         self.Species_Lists['Li_Vac'] = self.Species_Lists['Vac'].copy()+self.Species_Lists['Li'].copy()
@@ -207,11 +202,11 @@ class Multi_Time_Scale_KMC(Common_Class):
             print("Trajectory Step Number:  " + str(s) + "\n")
             
             self.Conf[s] = {
-                'Mn2_l':self.Species_Lists['Mn2'].copy(),
-                'Mn3_l':self.Species_Lists['Mn3'].copy(),
-                'Mn4_l':self.Species_Lists['Mn4'].copy(),
-                'Li_l':self.Species_Lists['Li'].copy(),
-                'Ti_l':self.Species_Lists['Ti4'].copy(),
+                'Mn2':self.Species_Lists['Mn2'].copy(),
+                'Mn3':self.Species_Lists['Mn3'].copy(),
+                'Mn4':self.Species_Lists['Mn4'].copy(),
+                'Li':self.Species_Lists['Li'].copy(),
+                'Ti4':self.Species_Lists['Ti4'].copy(),
                 'Av_Energy':self.av_energy,
                 'Hop': the_hop[encoding],
                 'Encoding': encoding,
