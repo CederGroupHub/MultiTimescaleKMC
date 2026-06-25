@@ -9,6 +9,7 @@ Code to simulate multi-domain (Mn-rich) delta-Disordered Rocksalt structures. Pe
 Learn more about this earth abundant, high-performing, multi-domain materials from the following works.
 
 T. Holstun, et. al. Accelerating the electrochemical formation of the δ phase in manganese‐rich rocksalt cathodes. Adv. Mater. 37, 2412871 (2025).
+
 S. Anand, et. al. Origin of enhanced performance when Mn-rich rocksalt cathodes transform to delta-DRX. Mater. Today. 88, 210-218 (2025).
 
 
